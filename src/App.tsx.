@@ -1,0 +1,270 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { 
+  Settings, 
+  Copy, 
+  Info, 
+  RotateCcw, 
+  ChevronDown, 
+  Check 
+} from 'lucide-react';
+
+// ==========================================
+// 1. TYPES & INTERFACES
+// ==========================================
+type System = 'SI' | 'CGS' | 'MKS' | 'Imperial' | 'Other';
+
+interface Unit {
+  id: string;
+  name: string;
+  symbol: string;
+  derivedFormula: string;
+  system: System;
+  toBase: number;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  baseUnitName: string;
+  units: Unit[];
+}
+
+// ==========================================
+// 2. UNIT DATA (Engineering Constants)
+// ==========================================
+const UNIT_DATA: Category[] = [
+  {
+    id: 'pressure',
+    name: 'Pressure & Stress',
+    baseUnitName: 'Pascal',
+    units: [
+      { id: 'pa', name: 'Pascal', symbol: 'Pa', derivedFormula: 'N/m²', system: 'SI', toBase: 1 },
+      { id: 'bar', name: 'Bar', symbol: 'bar', derivedFormula: '10⁵ N/m²', system: 'Other', toBase: 100000 },
+      { id: 'atm', name: 'Atmosphere', symbol: 'atm', derivedFormula: '101325 Pa', system: 'Other', toBase: 101325 },
+      { id: 'torr', name: 'Torr', symbol: 'Torr', derivedFormula: 'mmHg', system: 'Other', toBase: 133.322 },
+      { id: 'psi', name: 'Pound per sq inch', symbol: 'psi', derivedFormula: 'lbf/in²', system: 'Imperial', toBase: 6894.76 },
+      { id: 'barye', name: 'Barye', symbol: 'ba', derivedFormula: 'dyn/cm²', system: 'CGS', toBase: 0.1 },
+      { id: 'tech_atm', name: 'Technical Atm', symbol: 'at', derivedFormula: 'kgf/cm²', system: 'MKS', toBase: 98066.5 },
+    ]
+  },
+  {
+    id: 'force',
+    name: 'Force',
+    baseUnitName: 'Newton',
+    units: [
+      { id: 'newton', name: 'Newton', symbol: 'N', derivedFormula: 'kg·m/s²', system: 'SI', toBase: 1 },
+      { id: 'dyne', name: 'Dyne', symbol: 'dyn', derivedFormula: 'g·cm/s²', system: 'CGS', toBase: 1e-5 },
+      { id: 'kgf', name: 'Kilogram-force', symbol: 'kgf', derivedFormula: '9.81 N', system: 'MKS', toBase: 9.80665 },
+      { id: 'lbf', name: 'Pound-force', symbol: 'lbf', derivedFormula: 'slug·ft/s²', system: 'Imperial', toBase: 4.44822 },
+    ]
+  },
+  {
+    id: 'dyn_visc',
+    name: 'Dynamic Viscosity',
+    baseUnitName: 'Pascal-second',
+    units: [
+      { id: 'pas', name: 'Pascal-second', symbol: 'Pa·s', derivedFormula: 'N·s/m²', system: 'SI', toBase: 1 },
+      { id: 'poise', name: 'Poise', symbol: 'P', derivedFormula: 'g/(cm·s)', system: 'CGS', toBase: 0.1 },
+      { id: 'cp', name: 'Centipoise', symbol: 'cP', derivedFormula: '0.01 P', system: 'CGS', toBase: 0.001 },
+      { id: 'reyn', name: 'Reyn', symbol: 'reyn', derivedFormula: 'lbf·s/in²', system: 'Imperial', toBase: 6894.76 },
+    ]
+  },
+  {
+    id: 'energy',
+    name: 'Energy & Work',
+    baseUnitName: 'Joule',
+    units: [
+      { id: 'joule', name: 'Joule', symbol: 'J', derivedFormula: 'N·m', system: 'SI', toBase: 1 },
+      { id: 'cal', name: 'Calorie', symbol: 'cal', derivedFormula: '4.184 J', system: 'Other', toBase: 4.184 },
+      { id: 'erg', name: 'Erg', symbol: 'erg', derivedFormula: 'dyn·cm', system: 'CGS', toBase: 1e-7 },
+      { id: 'btu', name: 'British Thermal Unit', symbol: 'Btu', derivedFormula: '1055 J', system: 'Imperial', toBase: 1055.06 },
+    ]
+  },
+  {
+    id: 'kin_visc',
+    name: 'Kinematic Viscosity',
+    baseUnitName: 'Square meter/sec',
+    units: [
+      { id: 'm2s', name: 'Sq. meter/sec', symbol: 'm²/s', derivedFormula: 'L²/T', system: 'SI', toBase: 1 },
+      { id: 'stokes', name: 'Stokes', symbol: 'St', derivedFormula: 'cm²/s', system: 'CGS', toBase: 0.0001 },
+      { id: 'cst', name: 'Centistokes', symbol: 'cSt', derivedFormula: 'mm²/s', system: 'CGS', toBase: 1e-6 },
+    ]
+  }
+];
+
+// ==========================================
+// 3. COMPONENTS
+// ==========================================
+
+const Tooltip: React.FC<{ unit: Unit; visible: boolean }> = ({ unit, visible }) => {
+  if (!visible) return null;
+  return (
+    <div className="absolute left-full top-0 ml-3 z-50 w-64 p-3 bg-slate-800 text-white text-xs rounded-lg shadow-xl border border-slate-600 pointer-events-none">
+      <div className="flex justify-between items-start mb-1">
+        <span className="font-bold text-sm text-cyan-400">{unit.name}</span>
+        <span className="bg-slate-700 px-1.5 py-0.5 rounded text-[10px] text-slate-300 border border-slate-600">{unit.system}</span>
+      </div>
+      <div className="space-y-1">
+        <div className="flex justify-between">
+          <span className="text-slate-400">Formula:</span>
+          <span className="font-mono text-cyan-200">{unit.derivedFormula}</span>
+        </div>
+      </div>
+      <div className="absolute top-4 -left-1.5 w-3 h-3 bg-slate-800 border-l border-b border-slate-600 transform rotate-45"></div>
+    </div>
+  );
+};
+
+const CustomUnitSelect: React.FC<{
+  label: string;
+  units: Unit[];
+  selectedUnit: Unit;
+  onSelect: (unit: Unit) => void;
+}> = ({ label, units, selectedUnit, onSelect }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [hoveredUnit, setHoveredUnit] = useState<Unit | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const clickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', clickOutside);
+    return () => document.removeEventListener('mousedown', clickOutside);
+  }, []);
+
+  return (
+    <div className="relative w-full" ref={ref}>
+      <label className="block text-xs font-medium text-slate-400 mb-1 uppercase tracking-wider">{label}</label>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between bg-slate-800 border border-slate-700 hover:border-cyan-500 text-white py-3 px-4 rounded-lg transition-all"
+      >
+        <div className="flex flex-col items-start">
+          <span className="font-semibold text-sm">{selectedUnit.name}</span>
+          <span className="text-xs text-slate-400 font-mono">[{selectedUnit.symbol}]</span>
+        </div>
+        <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-20 w-full mt-2 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+          {units.map((unit) => (
+            <div
+              key={unit.id}
+              onClick={() => { onSelect(unit); setIsOpen(false); }}
+              onMouseEnter={() => setHoveredUnit(unit)}
+              onMouseLeave={() => setHoveredUnit(null)}
+              className="relative cursor-pointer px-4 py-3 hover:bg-slate-800 flex justify-between items-center border-b border-slate-800 last:border-0"
+            >
+              <div className="flex flex-col">
+                <span className={`text-sm ${selectedUnit.id === unit.id ? 'text-cyan-400 font-bold' : 'text-slate-200'}`}>{unit.name}</span>
+                <span className="text-xs text-slate-500 font-mono">{unit.symbol}</span>
+              </div>
+              {selectedUnit.id === unit.id && <Check className="w-4 h-4 text-cyan-400" />}
+              <Tooltip unit={unit} visible={hoveredUnit?.id === unit.id} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==========================================
+// 4. MAIN APP COMPONENT
+// ==========================================
+export default function App() {
+  const [selectedCategory, setSelectedCategory] = useState<Category>(UNIT_DATA[0]);
+  const [fromUnit, setFromUnit] = useState<Unit>(UNIT_DATA[0].units[0]);
+  const [toUnit, setToUnit] = useState<Unit>(UNIT_DATA[0].units[1]);
+  const [inputValue, setInputValue] = useState<string>('1');
+  const [copyFeedback, setCopyFeedback] = useState(false);
+
+  useEffect(() => {
+    setFromUnit(selectedCategory.units[0]);
+    setToUnit(selectedCategory.units[1] || selectedCategory.units[0]);
+  }, [selectedCategory]);
+
+  const result = useMemo(() => {
+    const val = parseFloat(inputValue);
+    if (isNaN(val)) return '---';
+    const finalValue = (val * fromUnit.toBase) / toUnit.toBase;
+    const absVal = Math.abs(finalValue);
+    if (absVal === 0) return '0';
+    return (absVal < 0.001 || absVal > 100000) ? finalValue.toExponential(4) : parseFloat(finalValue.toPrecision(7)).toString();
+  }, [inputValue, fromUnit, toUnit]);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center p-4 antialiased">
+      <div className="w-full max-w-2xl bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl">
+        <div className="bg-slate-950/50 p-6 border-b border-slate-800 flex justify-between items-center rounded-t-2xl">
+          <div className="flex items-center gap-3">
+            <Settings className="w-6 h-6 text-cyan-400" />
+            <h1 className="text-xl font-bold text-white tracking-tight">MechConverter</h1>
+          </div>
+          <select 
+            className="bg-slate-800 text-sm border border-slate-700 text-white py-2 px-3 rounded-lg outline-none focus:border-cyan-500"
+            value={selectedCategory.id}
+            onChange={(e) => setSelectedCategory(UNIT_DATA.find(c => c.id === e.target.value)!)}
+          >
+            {UNIT_DATA.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+          </select>
+        </div>
+
+        <div className="p-8 space-y-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+            <div className="space-y-4">
+               <CustomUnitSelect label="From" units={selectedCategory.units} selectedUnit={fromUnit} onSelect={setFromUnit} />
+               <input
+                 type="number"
+                 value={inputValue}
+                 onChange={(e) => setInputValue(e.target.value)}
+                 className="w-full bg-slate-950 border-2 border-slate-800 rounded-xl py-4 px-4 text-2xl font-mono text-white focus:border-cyan-500 outline-none"
+               />
+            </div>
+
+            <div className="space-y-4">
+               <CustomUnitSelect label="To" units={selectedCategory.units} selectedUnit={toUnit} onSelect={setToUnit} />
+               <div className="relative bg-slate-800/50 border border-slate-700/50 rounded-xl py-4 px-4 h-[76px] flex items-center justify-between">
+                 <span className="text-2xl font-mono font-bold text-cyan-400 truncate">{result}</span>
+                 <button onClick={() => { navigator.clipboard.writeText(result); setCopyFeedback(true); setTimeout(() => setCopyFeedback(false), 2000); }} className="p-2 hover:text-white text-slate-400">
+                   {copyFeedback ? <Check className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5" />}
+                 </button>
+               </div>
+            </div>
+            <button onClick={() => { const t = fromUnit; setFromUnit(toUnit); setToUnit(t); }} className="hidden md:block absolute left-1/2 top-1/2 -translate-x-1/2 mt-3 bg-slate-800 p-2 rounded-full border border-slate-700 hover:text-cyan-400"><RotateCcw className="w-4 h-4" /></button>
+          </div>
+
+          <div className="bg-cyan-950/20 border border-cyan-900/30 rounded-lg p-4 flex gap-3 text-sm">
+            <Info className="w-5 h-5 text-cyan-500 shrink-0" />
+            <p className="text-cyan-100/70">Category: <strong>{selectedCategory.name}</strong>. Converting via <strong>{selectedCategory.baseUnitName}</strong> normalization.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================
+TAILWIND CONFIG (tailwind.config.js)
+==========================================
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: { extend: {} },
+  plugins: [],
+}
+
+==========================================
+CSS (src/index.css)
+==========================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+*/
